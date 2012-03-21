@@ -19,6 +19,57 @@
 if (!ModifyHeaders)
 	var ModifyHeaders = {};
 
+
+//-----------------------------------------------------------------------------
+// This block is From the https everywhere plugin (We're using it's IOUtils.js helper)
+// TODO: Consider removing unused code from IOUtil.js
+const CI = Components.interfaces;
+const CC = Components.classes;
+
+const IOS = CC["@mozilla.org/network/io-service;1"].getService(CI.nsIIOService);
+const OS = CC['@mozilla.org/observer-service;1'].getService(CI.nsIObserverService);
+const LOADER = CC["@mozilla.org/moz/jssubscript-loader;1"].getService(CI.mozIJSSubScriptLoader);
+const _INCLUDED = {};
+
+// NoScript uses this blob to include js constructs that stored in the chrome/
+// directory, but are not attached to the Firefox UI (normally, js located
+// there is attached to an Overlay and therefore is part of the UI).
+
+// Reasons for this: things in components/ directory cannot be split into
+// separate files; things in chrome/ can be
+
+const INCLUDE = function(name) {
+  if (arguments.length > 1)
+    for (var j = 0, len = arguments.length; j < len; j++)
+      INCLUDE(arguments[j]);
+  else if (!_INCLUDED[name]) {
+    try {
+      LOADER.loadSubScript("chrome://modifyheaders/content/code/"
+              + name + ".js");
+      _INCLUDED[name] = true;
+    } catch(e) {
+      dump("INCLUDE " + name + ": " + e + "\n");
+    }
+  }
+}
+
+function xpcom_generateQI(iids) {
+  var checks = [];
+  for each (var iid in iids) {
+    checks.push("CI." + iid.name + ".equals(iid)");
+  }
+  var src = checks.length
+    ? "if (" + checks.join(" || ") + ") return this;\n"
+    : "";
+  return new Function("iid", src + "throw Components.results.NS_ERROR_NO_INTERFACE;");
+}
+
+//function xpcom_checkInterfaces(iid,iids,ex)
+
+INCLUDE('IOUtil');
+//-----------------------------------------------------------------------------
+
+
 if (!ModifyHeaders.Header) {
 	Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 	
@@ -280,11 +331,44 @@ if (!ModifyHeaders.Proxy) {
 							// where 'foo' can be a regular expression
 							// and 'bar' is the string to replace the match with.
 							if(headers[i].action == "Modify") {
-								var isRegex = headerValue.match(/^\/(.*?)\/(.*?)\/$/);
-								if(isRegex.length>0) { // OR == 2 to be stricter
+								var regexOpParts = headerValue.match(/^\/(.*?)\/(.*?)\/$/);
+								if(regexOpParts.length>0) { // OR == 2 to be stricter
 									var currentHeaderValue = subject.getRequestHeader(headerName);
 									// 0 = /foo/bar/; 1 = foo; 2 = bar;
-									headerValue = currentHeaderValue.replace(new RegExp(isRegex[1]), isRegex[2]);
+									var theRegex = new RegExp(regexOpParts[1]);
+									headerValue = currentHeaderValue.replace(theRegex, regexOpParts[2]);
+									/*
+									dump("\n//---------------------------------------------------");
+									dump("\ncurrentHeaderValue: "+currentHeaderValue+" headerName: "+headerName);
+									dump("\nheaderValue: "+headerValue+" regex: "+isRegex[1]);
+									*/
+									if(theRegex.test(currentHeaderValue) && "Host"==headerName) {
+										// Replace the whole request like https-everywhere does.
+										// it replaces the channel (subject here) and the uri in it.
+										var channel = subject;
+										var newurl = channel.URI.spec.replace(theRegex, regexOpParts[2]);
+										var newuri = CC["@mozilla.org/network/standard-url;1"].
+										                 createInstance(CI.nsIStandardURL);
+										    newuri.init(CI.nsIStandardURL.URLTYPE_STANDARD, 80,
+										             newurl, channel.URI.originCharset, null);
+										    newuri = newuri.QueryInterface(CI.nsIURI);
+
+										dump("\nWill replace channel uri to: "+newuri.spec);
+										if (ChannelReplacement.supported) {
+											dump("\nINFO Scheduling channel replacement for "+channel.URI.spec);
+											IOUtil.runWhenPending(channel, function() {
+												var cr = new ChannelReplacement(channel, newuri);
+												cr.replace(true,null);
+												cr.open();
+												dump("\nINFO Ran channel replacement for "+channel.URI.spec); // I don't see this in the trace?
+											});
+											return true;
+										}
+
+										dump("\nWARN Aborting redirection " + channel.name + ", should be HTTPS!");
+										IOUtil.abort(channel);
+									}
+
 								}
 							} else if (headers[i].action == "Add") {
 								headerAppend = true;
