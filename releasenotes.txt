@@ -6,11 +6,12 @@ Release 0.7.1.3, 21 March 2012
   The replaced channel has a modified URL (nsIStandarURL).
   This utilizes code from the https-everywhere addon (IOUtil.js).
   See also: http://stackoverflow.com/a/5207141/905908
-  As an example, using the Header value "/www.domain.com/192.168.254.65/"
+  As an example, using the Header value "{www.domain.com}{192.168.254.65}"
   Will make all the requests from a page to that domain go to the IP address.
-  So a linked CSS on the index page etc - domain.com/css/style.css would be requested
+  So a linked CSS on the index page etc - www.domain.com/css/style.css would be requested
   as 192.168.254.65/css/style.css
-  
+  Use case example: A firewall was blocking access to www.domain.com but not to it's IP.
+
 --
 
 Release 0.7.1.2, 21 March 2012
@@ -21,9 +22,9 @@ Release 0.7.1.2, 21 March 2012
   Example: 
     Action: Modify
     Name: Host
-    Value: /^w{0,3}\.?domain.com$/192.168.254.65/
+    Value: {^w{0,3}\.?domain.com$}{192.168.254.65}
     This will change www.domain.com and domain.com to 192.168.254.65 if found in the Host header.
-    Warning: This wouldn't work for matching '/' (such as in http://)
+	(Updated 28th)
 
 --
 
